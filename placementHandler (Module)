@@ -1,0 +1,315 @@
+-- Bools
+local interpolation = true
+local moveByGrid = true
+local buildModePlacement = true
+
+-- Ints
+local rotationStep = 45
+local maxHeight = 90
+
+-- Numbers/Floats
+local lerpSpeed = "0.8"
+
+-- Other
+local gridTexture = "http://www.roblox.com/asset/?id=6905003203"
+
+local placement = {}
+
+placement.__index = placement
+
+local players = game:GetService("Players")
+local runService = game:GetService("RunService")
+local contentActionService = game:GetService("ContextActionService")
+
+local player = players.LocalPlayer
+local character = player.Character or player.CharacterAdded:Wait()
+local mouse = player:GetMouse()
+
+-- Constructor Variables
+local Grid_Size
+local Item_Location
+local Rotate_Key
+local Terminate_Key
+
+-- Activation Variables
+local object
+local placedObjects
+local plot
+local stackable
+local primary
+
+-- Variables used in calculations
+local posX
+local posY
+local posZ
+local speed = 1
+local rotation = 0
+local rotationVal = true
+
+-- Other
+local collided = nil
+
+-- Quick type vars
+local cframe = CFrame.new
+local angles = CFrame.fromEulerAnglesXYZ
+local clamp = math.clamp
+
+local function renderGrip()
+	if plot:FindFirstChildOfClass("Texture") then
+		plot:FindFirstChildOfClass("Texture"):Destroy()
+	end
+	
+	local texture = Instance.new("Texture")
+	texture.StudsPerTileU = 8
+	texture.StudsPerTileV = 8
+	texture.Texture = gridTexture
+	texture.Face = Enum.NormalId.Top
+	texture.Color3 = Color3.fromRGB(255, 255, 255)
+	texture.ZIndex = 1
+	texture.OffsetStudsU = 0
+	texture.OffsetStudsV = 0
+	texture.Transparency = 0.9
+	texture.Parent = plot
+end
+
+-- Hitbox
+local function changeHitboxColor()
+	if primary then
+		if collided then
+			primary.Color = Color3.fromRGB(255, 66, 66)
+		else
+			primary.Color = Color3.fromRGB(99, 255, 82)
+		end
+	end
+end
+
+-- Handles collisions on the hitbox
+local function handleCollisions()
+	if object then
+		collided = false
+		
+		local collisionPoint = primary.Touched:Connect(function() end)
+		local collisionPoints = primary:GetTouchingParts()
+		
+		for i = 1, #collisionPoints, 1 do
+			if not collisionPoints[i]:IsDescendantOf(object) and not collisionPoints[i]:IsDescendantOf(character) then
+				collided = true
+				
+				break
+			end
+		end
+		
+		collisionPoint:Disconnect()
+		
+		return
+	end
+end
+
+local function bounds(cf, offsetX, offsetZ)
+	local LOWER_X_BOUND
+	local LOWER_Z_BOUND
+	local UPPER_X_BOUND
+	local UPPER_Z_BOUND
+	
+	LOWER_X_BOUND = plot.Position.X - (plot.Size.X*0.5) + offsetX
+	UPPER_X_BOUND = plot.Position.X + (plot.Size.X*0.5) - offsetX
+	
+	LOWER_Z_BOUND = plot.Position.Z - (plot.Size.Z*0.5) + offsetZ
+	UPPER_Z_BOUND = plot.Position.Z + (plot.Size.Z*0.5) - offsetZ
+	
+	local newX = clamp(cf.X, LOWER_X_BOUND, UPPER_X_BOUND)
+	local newZ = clamp(cf.Z, LOWER_Z_BOUND, UPPER_Z_BOUND)
+	
+	return cframe(newX, posY, newZ)
+end
+
+-- Calculates the initial y position above the object
+local function calculateYPosition(toP, toS, oS)
+	return (toP + toS*0.5) + oS*0.5
+end
+
+local function rotate(actionName, inputState, inputObj)
+	if inputState == Enum.UserInputState.Begin then
+		rotation += rotationStep
+		rotationVal = not rotationVal
+	end
+end
+
+local function cancel(actionName, inputState, inputObj)
+	if inputState == Enum.UserInputState.Begin then
+		object:Destroy()
+		if plot:FindFirstChild("Texture") then
+			plot:FindFirstChild("Texture"):Destroy()
+		end
+		
+		mouse.TargetFilter = nil
+	end
+end
+
+local function snap(c)
+	local newX = math.round(c.X/Grid_Size)*Grid_Size
+	local newZ = math.round(c.Z/Grid_Size)*Grid_Size
+	
+	return cframe(newX, 0, newZ)
+end
+
+-- Calculates the models position based on grid
+local function calculateItemPosition()
+	local finalCFrame = cframe(0, 0, 0)
+	local x, z
+	local offsetX, offsetZ
+	
+	if rotationVal then
+		offsetX, offsetZ = primary.Size.X*0.5, primary.Size.Z*0.5
+		x, z = mouse.Hit.X - offsetX, mouse.Hit.Z - offsetZ
+	else
+		offsetX, offsetZ = primary.Size.Z*0.5, primary.Size.X*0.5
+		x, z = mouse.Hit.X - offsetX, mouse.Hit.Z - offsetZ
+	end
+	
+	if stackable and mouse.Target and mouse.Target:IsDescendantOf(plot) then
+		posY = calculateYPosition(mouse.Target.Position.Y, mouse.Target.Size.Y, primary.Size.Y)
+	else
+		posY = calculateYPosition(plot.Position.Y, plot.Size.Y, primary.Size.Y)
+	end
+	
+	if moveByGrid then
+		local pltCFrame = cframe(plot.CFrame.X, plot.CFrame.Y, plot.CFrame.Z)
+		local pos = cframe(x, 0, z)
+		pos = snap(pos*pltCFrame:Inverse())
+		finalCFrame = pos*pltCFrame*cframe(offsetX, 0, offsetZ)
+	else
+		finalCFrame = cframe(mouse.Hit.X, posY, mouse.Hit.Z)
+	end
+	
+	finalCFrame = bounds(cframe(finalCFrame.X, posY, finalCFrame.Z), offsetX, offsetZ)
+	
+	return finalCFrame
+end
+
+local function unbindInputs()
+	contentActionService:UnbindAction("Rotate")
+	contentActionService:UnbindAction("Cancel")
+end
+
+local function bindInputs()
+	contentActionService:BindAction("Rotate", rotate, false, Rotate_Key)
+	contentActionService:BindAction("Cancel", cancel, false, Terminate_Key)
+end
+
+-- Sets models position based on pivot
+local function translateObj()
+	if placedObjects and object.Parent == placedObjects then
+		handleCollisions()
+		changeHitboxColor()
+		
+		object:PivotTo(object.PrimaryPart.CFrame:Lerp(calculateItemPosition(), speed))
+		
+	end
+end
+
+local function getInstantCFrame()
+	return calculateItemPosition()
+end
+
+function placement:place(remote)
+	if not collided and object and mouse.TargetFilter ~= nil then
+		local cf = getInstantCFrame()
+		
+		remote:InvokeServer(object.Name, placedObjects, cf, plot)
+	end
+end
+
+-- Check if the model will snap evenly on the plot
+local function verifyPlane()
+	return plot.Size.X%Grid_Size == 0 and plot.Size.Z%Grid_Size == 0
+end
+
+-- Confirms that the settings are vaild
+local function approvePlacement()
+	if not verifyPlane() then
+		warn("The model cannot snap on the plot")
+
+		return false
+	end
+
+	if Grid_Size >= math.min(plot.Size.X, plot.Size.Z) then
+		error("Grid size is larger than plot")
+
+		return false
+	end
+
+	return true
+end
+
+-- Constructor function
+function placement.new(g, objs, r, t)
+	local data = {}
+	local metaData = setmetatable(data, placement)
+	
+	Grid_Size = g
+	Item_Location = objs
+	Rotate_Key = r
+	Terminate_Key = t
+	
+	data.grid = Grid_Size
+	data.itemlocation = Item_Location
+	data.rotationkey = Rotate_Key or Enum.KeyCode.R
+	data.terminatekey = Terminate_Key or Enum.KeyCode.X
+	
+	return data
+end
+
+-- activates placement (id = name, pobjs = placedObjects, plt = plot, stk = stackable)
+function placement:activate(id, pobjs, plt, stk)
+	if object then
+		object:Destroy()
+	end
+	
+	-- Assigns values for necessary variables
+	object = Item_Location:FindFirstChild(id):Clone()
+	primary = object.PrimaryPart
+	placedObjects = pobjs
+	plot = plt
+	stackable = stk
+	rotation = 0
+	rotationVal = true
+	
+	for i, v in pairs(object:GetDescendants()) do
+		if v:IsA("BasePart") then
+			v.CanCollide = false
+		end
+	end
+	
+	if not approvePlacement() then
+		return "Placement could not activate"
+	end
+	
+	if not stackable then
+		mouse.TargetFilter = placedObjects
+	else
+		mouse.TargetFilter = object
+	end
+	
+	-- Sets up interpolations speed
+	local tempSpeed = 1
+	
+	if interpolation then
+		tempSpeed = math.clamp(math.abs(tonumber(1 - lerpSpeed)), 0, 0.9)
+		
+		speed = 1
+	end
+	
+	renderGrip()
+	
+	object.Parent = placedObjects
+	
+	task.wait()
+	
+	bindInputs()
+	speed = tempSpeed
+end
+
+runService:BindToRenderStep("Input", Enum.RenderPriority.Input.Value, translateObj)
+
+return placement
