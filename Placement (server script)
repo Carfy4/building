@@ -1,0 +1,72 @@
+game:GetService("Players").PlayerAdded:Connect(function(plr)
+	
+	local Color = Instance.new("Color3Value")
+	Color.Name = "Color"
+	Color.Parent = plr
+	
+end)
+
+local function handleCollisions(object, char)
+	local collided = false
+	
+	if object then
+		local collisionPoint = object.PrimaryPart.Touched:Connect(function() end)
+		local collisionPoints = object.PrimaryPart:GetTouchingParts()
+
+		for i = 1, #collisionPoints, 1 do
+			if not collisionPoints[i]:IsDescendantOf(object) and not collisionPoints[i]:IsDescendantOf(char) then
+				collided = true
+
+				break
+			end
+		end
+
+		collisionPoint:Disconnect()
+
+		return collided
+	end
+end
+
+local function checkBounds(plot, primary)
+	local LOWER_X_BOUND
+	local LOWER_Z_BOUND
+	local UPPER_X_BOUND
+	local UPPER_Z_BOUND
+	
+	local currentPos = primary.Position
+
+	LOWER_X_BOUND = plot.Position.X - (plot.Size.X*0.5)
+	UPPER_X_BOUND = plot.Position.X + (plot.Size.X*0.5)
+
+	LOWER_Z_BOUND = plot.Position.Z - (plot.Size.Z*0.5)
+	UPPER_Z_BOUND = plot.Position.Z + (plot.Size.Z*0.5)
+
+	return currentPos.X > UPPER_X_BOUND or currentPos.X < LOWER_X_BOUND or currentPos.Z > UPPER_Z_BOUND or currentPos.Z < LOWER_Z_BOUND
+end
+
+local function place(plr, id, loc, cf, plot)
+	local item = game.ReplicatedStorage.items:FindFirstChild(id):Clone()
+	item.PrimaryPart.CanCollide = true
+	item.PrimaryPart.Transparency = 0
+	item:PivotTo(cf)
+	
+	if plot then
+		item.Parent = loc
+		
+		if checkBounds(plot, item.PrimaryPart) then
+			item:Destroy()
+			
+			return false
+		end
+		
+		if handleCollisions(item, plr.Character) then
+			item:Destroy()
+			
+			return false
+		end
+	end
+	
+	return true
+end
+
+game.ReplicatedStorage.remotes.place.OnServerInvoke = place
