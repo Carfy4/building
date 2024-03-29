@@ -1,0 +1,26 @@
+local module = require(game.ReplicatedStorage.modules.placementHandler)
+
+local placement = module.new(
+	4,
+	game.ReplicatedStorage.items,
+	Enum.KeyCode.R, Enum.KeyCode.X
+	
+)
+
+local frame = script.Parent.ScreenGui.Frame
+
+local player = game:GetService("Players").LocalPlayer
+
+frame.Objects.Block.MouseButton1Click:Connect(function()	
+	placement:activate("block", workspace.Base.itemHolder, workspace.Base, true)
+end)
+
+frame.Objects.Bricks.MouseButton1Click:Connect(function()	
+	placement:activate("Block2", workspace.Base.itemHolder, workspace.Base, true)
+end)
+
+local mouse = game.Players.LocalPlayer:GetMouse()
+
+mouse.Button1Up:Connect(function()
+	placement:place(game.ReplicatedStorage:WaitForChild("remotes"):WaitForChild("place"))
+end)
