@@ -1,0 +1,7 @@
+local plotHandler = {
+	["Size"] = {
+		First = Vector3.new(100, 4, 100)
+	}
+}
+
+return plotHandler
